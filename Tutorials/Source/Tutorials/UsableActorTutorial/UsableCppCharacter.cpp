@@ -1,13 +1,13 @@
 
 
-#include "Tutorials.h"
 #include "UsableCppCharacter.h"
+#include "Tutorials.h"
 #include "UsableActor.h"
 #include "TutorialsProjectile.h"
+#include "Engine/World.h"
 
-
-AUsableCppCharacter::AUsableCppCharacter(const class FObjectInitializer& PCIP)
-	: Super(PCIP)
+AUsableCppCharacter::AUsableCppCharacter()
+	: Super()
 {
 	// Set size for collision capsule
 	GetCapsuleComponent()->InitCapsuleSize(42.f, 96.0f);
@@ -17,17 +17,14 @@ AUsableCppCharacter::AUsableCppCharacter(const class FObjectInitializer& PCIP)
 	BaseLookUpRate = 45.f;
 
 	// Create a CameraComponent	
-	FirstPersonCameraComponent = PCIP.CreateDefaultSubobject<UCameraComponent>(this, TEXT("FirstPersonCamera"));
-	FirstPersonCameraComponent->AttachParent = GetCapsuleComponent();
+	FirstPersonCameraComponent = CreateDefaultSubobject<UCameraComponent>(TEXT("FirstPersonCamera"));
+	FirstPersonCameraComponent->AttachToComponent(GetCapsuleComponent(), FAttachmentTransformRules::KeepRelativeTransform);
 	FirstPersonCameraComponent->RelativeLocation = FVector(0, 0, 64.f); // Position the camera
 
-	// Default offset from the character location for projectiles to spawn
-	GunOffset = FVector(100.0f, 30.0f, 10.0f);
-
 	// Create a mesh component that will be used when being viewed from a '1st person' view (when controlling this pawn)
-	Mesh1P = PCIP.CreateDefaultSubobject<USkeletalMeshComponent>(this, TEXT("CharacterMesh1P"));
+	Mesh1P = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("CharacterMesh1P"));
 	Mesh1P->SetOnlyOwnerSee(true);			// only the owning player will see this mesh
-	Mesh1P->AttachParent = FirstPersonCameraComponent;
+	Mesh1P->AttachToComponent(FirstPersonCameraComponent, FAttachmentTransformRules::KeepRelativeTransform);
 	Mesh1P->RelativeLocation = FVector(0.f, 0.f, -150.f);
 	Mesh1P->bCastDynamicShadow = false;
 	Mesh1P->CastShadow = false;
@@ -45,13 +42,15 @@ AUsableActor* AUsableCppCharacter::GetUsableInView()
 	FVector camLoc;
 	FRotator camRot;
 
-	if (Controller == NULL)
-		return NULL;
+	if (Controller == nullptr)
+	{
+		return nullptr;
+	}
 
 	Controller->GetPlayerViewPoint(camLoc, camRot);
-	const FVector start_trace = camLoc;
+	const FVector StartTrace = camLoc;
 	const FVector direction = camRot.Vector();
-	const FVector end_trace = start_trace + (direction * MaxUseDistance);
+	const FVector EndTrace = StartTrace + (direction * MaxUseDistance);
 
 	FCollisionQueryParams TraceParams(FName(TEXT("")), true, this);
 	TraceParams.bTraceAsyncScene = true;
@@ -59,7 +58,7 @@ AUsableActor* AUsableCppCharacter::GetUsableInView()
 	TraceParams.bTraceComplex = true;
 
 	FHitResult Hit(ForceInit);
-	GetWorld()->LineTraceSingle(Hit, start_trace, end_trace, COLLISION_PROJECTILE, TraceParams);
+	GetWorld()->LineTraceSingleByChannel(Hit, StartTrace, EndTrace, ECC_Visibility, TraceParams);
 
 	//DrawDebugLine(GetWorld(), start_trace, end_trace, FColor(255, 255, 255), false, 1);
 
@@ -82,7 +81,7 @@ void AUsableCppCharacter::Tick(float DeltaSeconds)
 		{
 			if (FocusedUsableActor)
 			{
-				FocusedUsableActor->EndFocusItem();
+				FocusedUsableActor->OnEndFocus();
 			}
 
 			bHasNewFocus = true;
@@ -96,7 +95,7 @@ void AUsableCppCharacter::Tick(float DeltaSeconds)
 		{
 			if (bHasNewFocus)
 			{
-				usable->StartFocusItem();
+				usable->OnBeginFocus();
 				bHasNewFocus = false;
 			}
 		}
@@ -146,41 +145,6 @@ void AUsableCppCharacter::SetupPlayerInputComponent(class UInputComponent* Input
 	InputComponent->BindAxis("LookUpRate", this, &AUsableCppCharacter::LookUpAtRate);
 }
 
-void AUsableCppCharacter::OnFire()
-{
-	// try and fire a projectile
-	if (ProjectileClass != NULL)
-	{
-		const FRotator SpawnRotation = GetControlRotation();
-		// MuzzleOffset is in camera space, so transform it to world space before offsetting from the character location to find the final muzzle position
-		const FVector SpawnLocation = GetActorLocation() + SpawnRotation.RotateVector(GunOffset);
-
-		UWorld* const World = GetWorld();
-		if (World != NULL)
-		{
-			// spawn the projectile at the muzzle
-			World->SpawnActor<ATutorialsProjectile>(ProjectileClass, SpawnLocation, SpawnRotation);
-		}
-	}
-
-	// try and play the sound if specified
-	if (FireSound != NULL)
-	{
-		UGameplayStatics::PlaySoundAtLocation(this, FireSound, GetActorLocation());
-	}
-
-	// try and play a firing animation if specified
-	if (FireAnimation != NULL)
-	{
-		// Get the animation object for the arms mesh
-		UAnimInstance* AnimInstance = Mesh1P->GetAnimInstance();
-		if (AnimInstance != NULL)
-		{
-			AnimInstance->Montage_Play(FireAnimation, 1.f);
-		}
-	}
-
-}
 
 void AUsableCppCharacter::MoveForward(float Value)
 {
